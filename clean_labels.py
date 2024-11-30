@@ -101,29 +101,41 @@ def feature_compute(model, temploader):
             _, features = model(data)
             trainFeatures[:, batch_idx * batchSize:batch_idx * batchSize + batchSize] = features.data.t()
     return trainFeatures
+    
+def compute_features_sentence(model, temploader, batch_size=1):
+    all_feats = torch.rand(len(temploader.dataset), 768).t() # [dim, n]
+    with torch.no_grad():
+        for batch_idx, (text, _, _) in tqdm(enumerate(temploader), total=len(temploader)):
+            features = model.encode(text, convert_to_tensor=True) #[1, dim]
+            start_index = batch_idx * batch_size
+            end_index = batch_idx * batch_size + batch_size
+            all_feats[:, start_index:end_index] = features.data.t()
+    return all_feats
 
-def weighted_knn(temploader, features, noisy_labels, return_labels):
+def weighted_knn(temploader, features, noisy_labels, return_labels, bsz = 1):
     similarity_graph_all = torch.zeros(len(temploader.dataset), len(temploader.dataset))
     discrepancy_measure = torch.zeros((len(temploader.dataset.targets),))
     discrepancy_measure_pseudo_labels = torch.zeros((len(temploader.dataset.targets),))
     agreement_measure = torch.zeros((len(temploader.dataset.targets),))
     if return_labels:
         new_labels = torch.LongTensor(temploader.dataset.targets)
-    else: 
+    else:
         new_labels = noisy_labels.clone()
-      
+
+    features = F.normalize(features, p=2, dim=0)
+
     with torch.no_grad():
         retrieval_one_hot_train = torch.zeros(k_val, num_classes)
 
         for batch_idx, (data, labels, index) in tqdm(enumerate(temploader), total=len(temploader)):
             # bsz = data['input_ids'].size(0)
             bsz = 1
-            # make sure in dataset the train features are properly indexed 
+            # make sure in dataset the train features are properly indexed
             features_transpose = features.t()[index]
             dist = torch.mm(features_transpose, features)
-            if return_labels: # if in first loop against original noisy labels, compute similarity_graph_all 
+            if return_labels: # if in first loop against original noisy labels, compute similarity_graph_all
                 similarity_graph_all[index] = dist.detach()
-            # access diagonals of the matrix, or self 
+            # access diagonals of the matrix, or self
             dist[torch.arange(dist.size()[0]), torch.arange(dist.size()[0])] = -1  ## Self-contrast set to -1
 
             yd, yi = dist.topk(k_val, dim=1, largest=True, sorted=True)  ## Top-K similar scores and corresponding indexes
@@ -139,9 +151,9 @@ def weighted_knn(temploader, features, noisy_labels, return_labels):
                 yd_transform.view(bsz, -1, 1)), 1)
             probs_norm = probs_corrected / torch.sum(probs_corrected, dim=1)[:, None]
             prob_temp = probs_norm[torch.arange(0, bsz), labels]
-            prob_temp = torch.clamp(prob_temp, min=1e-2, max=1 - 1e-2) 
+            prob_temp = torch.clamp(prob_temp, min=1e-2, max=1 - 1e-2)
             discrepancy_measure[index] = -torch.log(prob_temp)
-            
+
             if return_labels:
                 sorted_pro, predictions_corrected = probs_norm.sort(1, True)
                 targets_comparison = predictions_corrected[:, 0] # new_labels
@@ -149,14 +161,14 @@ def weighted_knn(temploader, features, noisy_labels, return_labels):
                 targets_comparison = noisy_labels[index]
 
             prob_temp = probs_norm[torch.arange(0, bsz), targets_comparison]
-            prob_temp = torch.clamp(prob_temp, min=1e-2, max=1 - 1e-2) 
+            prob_temp = torch.clamp(prob_temp, min=1e-2, max=1 - 1e-2)
             discrepancy_measure_pseudo_labels[index] = -torch.log(prob_temp)
             agreement_measure[index] = (torch.max(probs_norm, dim=1)[1] == labels).float().data
 
             if return_labels:
                 new_labels[index] = targets_comparison
-        
-        if return_labels: 
+
+        if return_labels:
             return new_labels, similarity_graph_all
 
         else:
@@ -192,41 +204,82 @@ def select_examples(temploader, final_discrepancy_measure, agreement_measure):
     print('Selected examples:', torch.sum(selected_examples).item())
     return selected_examples
 
+def map_similarity_to_confidence(similarity_scores, same_labels_mask, different_labels_mask):
+    """
+    This function takes similarity scores and maps them to confidence values.
+    For same labels, the confidence is mapped closer to 1 as similarity increases.
+    For different labels, the confidence is mapped closer to -1 as similarity decreases.
+    """
+    non_self_mask = ~torch.eye(similarity_scores.size(0), dtype=torch.bool, device=similarity_scores.device)
 
-def select_pairs(selected_examples, similar_graph_all, noisy_labels):
+    # For **same labels**: high similarity corresponds to high positive confidence (close to 1)
+    confidence_same = similarity_scores * 2 - 1  # Similarity [0, 1] -> Confidence [-1, 1]
+
+    # For **different labels**: high similarity corresponds to high negative confidence (close to -1)
+    confidence_diff = -(similarity_scores * 2 - 1)  # Similarity [0, 1] -> Confidence [1, -1]
+
+    # Initialize a confidence matrix with zeros
+    confidence = torch.zeros_like(similarity_scores)
+
+    # Apply the confidence mapping for same labels
+    confidence[same_labels_mask & non_self_mask] = confidence_same[same_labels_mask & non_self_mask]
+
+    # Apply the confidence mapping for different labels
+    confidence[different_labels_mask & non_self_mask] = confidence_diff[different_labels_mask & non_self_mask]
+
+    return confidence
+
+def select_pairs(selected_examples, similar_graph_all, noisy_labels, device='cuda'):
+    device = torch.device(device if torch.cuda.is_available() else 'cpu')
+
     with torch.no_grad():
-        index_selected = torch.nonzero(selected_examples, as_tuple=True)[0].cpu()
-        total_selected_num = len(index_selected)
+        selected_examples = selected_examples.to(device).bool()  # Convert to boolean mask
+        similarity_scores = similar_graph_all.to(device)
+        noisy_labels = noisy_labels.to(device)
+
         total_num = len(noisy_labels)
-        noisy_pairs = torch.eq(noisy_labels.unsqueeze(0), noisy_labels.unsqueeze(1))  # Shape: [total_num, total_num]
-        index_selected_expanded = index_selected.unsqueeze(1).expand(total_selected_num, total_selected_num)  # Expands rows
-        index_selected_expanded_t = index_selected.unsqueeze(0).expand(total_selected_num, total_selected_num)  # Expands columns
 
-        # Use expanded indices for selection
-        selected_pairs = noisy_pairs[index_selected_expanded, index_selected_expanded_t].clone()
+        confidence_matrix = torch.zeros((total_num, total_num), dtype=torch.float, device=device)
 
-        # Create the temporary graph using similar_graph_all
-        temp_graph = similar_graph_all[index_selected_expanded, index_selected_expanded_t]
+        # Create masks for same and different labels
+        same_labels_mask = torch.eq(noisy_labels.unsqueeze(0), noisy_labels.unsqueeze(1))  # True if labels match
+        different_labels_mask = ~same_labels_mask
 
-        # Compute the threshold value based on the quantile of temp_graph for the selected pairs
-        selected_threshold = torch.quantile(temp_graph[selected_pairs], beta)
-        print('selected_threshold:', selected_threshold)
+        # Create selected mask where both i and j are selected
+        selected_mask = selected_examples.unsqueeze(0) & selected_examples.unsqueeze(1)
 
-        # Create a tensor of zeros with the same shape as noisy_pairs
-        temp = torch.zeros_like(noisy_pairs, dtype=torch.bool)
+        # Map similarity scores to confidence values
+        confidence_matrix = map_similarity_to_confidence(similarity_scores, same_labels_mask, different_labels_mask)
 
-        # Use torch.where to modify noisy_pairs based on the selected threshold
-        # Make sure similar_graph_all < selected_threshold applies correctly
-        noisy_pairs = torch.where(similar_graph_all < selected_threshold, temp, noisy_pairs)
+        # Compute the threshold value based on the quantile of similarities in the selected mask
+        selected_similarity_scores = similarity_scores[selected_mask]
+        selected_threshold = torch.quantile(selected_similarity_scores, beta)
 
-        # Update the selected pairs in noisy_pairs
-        noisy_pairs[index_selected_expanded, index_selected_expanded_t] = selected_pairs
+        # Set low similarity pairs to 0 based on the threshold
+        confidence_matrix[~selected_mask] = 0.0
+        confidence_matrix[similarity_scores < selected_threshold] = 0.0
 
-        # Final result
-        final_selected_pairs = noisy_pairs
+        # Count how many elements are set to 0 due to the selected_mask being False
+        not_selected_mask = ~selected_mask
+        count_not_selected = torch.sum(confidence_matrix[not_selected_mask] == 0)
+        print(f"Examples not selected due to unconfident examples: {count_not_selected}")
 
-    return final_selected_pairs.contiguous()
+        # Count how many elements are set to 0 due to similarity being below the threshold
+        similarity_below_threshold_mask = similarity_scores < selected_threshold
+        count_below_threshold = torch.sum(confidence_matrix[similarity_below_threshold_mask] == 0)
+        print(f"Examples not selected due to being below threshold: {count_below_threshold}")
 
+        # Make sure the matrix is symmetric (i, j) = (j, i)
+        confidence_matrix = torch.triu(confidence_matrix) + torch.triu(confidence_matrix, diagonal=1).T
+
+    return confidence_matrix.contiguous()
+
+num_classes = 2
+low_dim = 128
+k_val = 50
+alpha = 0.5
+beta = 0.5
+sup_t = 0.1
 
 def pair_selection_no_device(model, train_features, trainloader):
     model.eval()
