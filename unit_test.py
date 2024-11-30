@@ -1,6 +1,6 @@
 import random 
 from data import BinaryRewardModelDataset 
-from torch.data.utils import DataLoader 
+from torch.utils.data import DataLoader 
 from clean_labels import compute_features, pair_selection 
 
 positives = [

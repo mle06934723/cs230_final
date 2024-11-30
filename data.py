@@ -1,6 +1,5 @@
 import torch
 from torch.utils.data import Dataset
-from transformers import AutoTokenizer
 
 class BinaryRewardModelDataset(Dataset):
     def __init__(self, chosen_texts, rejected_texts):
