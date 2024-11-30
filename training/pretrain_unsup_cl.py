@@ -6,14 +6,7 @@ import torch
 import np 
 from datasets import (
     load_dataset,
-    Dataset,
-    DatasetDict,
-    DatasetInfo,
-    Features,
-    Value,
-    ClassLabel
 )
-from huggingface_hub import HfApi, Repository
 from sentence_transformers import (
     SentenceTransformerTrainer,
     SentenceTransformerTrainingArguments,

@@ -1,15 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel, AutoTokenizer
-from transformers import AutoTokenizer
-from datasets import load_dataset
-import torch
-import pandas as pd
-from torch.utils.data import DataLoader, Dataset
 from typing import Dict
 from tqdm import tqdm
-from typing import Dict
 
 num_classes = 2
 low_dim = 128
