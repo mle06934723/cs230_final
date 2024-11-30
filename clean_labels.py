@@ -12,18 +12,6 @@ from typing import Dict
 from tqdm import tqdm
 from typing import Dict
 
-encoder = AutoModel.from_pretrained('xlm-roberta-large')
-
-model = IntegrityClassificationModel(encoder, 2, 1024, 128)
-
-dataset = load_dataset("Anthropic/hh-rlhf")
-tokenizer = AutoTokenizer.from_pretrained("xlm-roberta-large")
-
-train_dataset = AnthropicDataset(dataset, tokenizer, num_samples=50, partition='train')
-eval_dataset = AnthropicDataset(dataset, tokenizer, num_samples=1000, partition='test')
-train_dataloader = DataLoader(train_dataset, shuffle=True, batch_size=1)
-eval_dataloader = DataLoader(eval_dataset, batch_size=8)
-
 num_classes = 2
 low_dim = 128
 k_val = 10
@@ -215,13 +203,6 @@ def select_pairs(selected_examples, similar_graph_all, noisy_labels, device='cud
 
     return confidence_matrix.contiguous()
 
-num_classes = 2
-low_dim = 128
-k_val = 50
-alpha = 0.5
-beta = 0.5
-sup_t = 0.1
-
 def pair_selection(model, train_features, trainloader):
     model.eval()
     temploader = torch.utils.data.DataLoader(trainloader.dataset, batch_size=1, shuffle=False, num_workers=8)
@@ -231,6 +212,3 @@ def pair_selection(model, train_features, trainloader):
     selected_examples = select_examples(temploader, discrepancy_measure, agreement_measure)
     selected_pairs = select_pairs(selected_examples, similarity_graph_all, init_noisy_labels)
     return selected_examples, selected_pairs
-
-features = compute_features_deprecated(model, train_dataloader)
-examples, pairs = pair_selection(model, features, train_dataloader)
