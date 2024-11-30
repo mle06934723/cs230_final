@@ -24,55 +24,60 @@ class CurriculumContrastiveRewardDataset(Dataset):
         self.alpha = 0.5
         self.beta = 0.25
         self.sup_t = 0.1
+        # Run pair selection algorithm to extract highly confident pairs represented as a 2D matrix
         self.selected_examples, pairs = self.pair_selection(train_features, init_dataloader)
+        # Order the pairs by highest confidence 
         self.tuples = self.order_pairs_curriculum(pairs)
-        self.ordered_tuples = self.reorder_tuples(self.tuples, self.binary_dataset)
-        self.sentence_tuples = self.extract_sentence_tuples(self.ordered_tuples, self.binary_dataset)
-        self.top_close, self.top_far = self.get_top_elements(self.ordered_tuples)
+        # Within tuples, order chosen response (label = 1) always first if applicable
+        self.ordered_tuples = self.order_chosen_first(self.tuples, self.binary_dataset)
+        # Extract sentences from ordered tuples. This is what __getitem__ will yield from. 
+        self.sentence_tuples = self.extract_sentences(self.ordered_tuples, self.binary_dataset)
+        # Debug top 50 close (chosen, chosen or rejected, rejected) and far pairings (chosen, rejected) to sanity check 
+        self.top_close, self.top_far = self.debug_top_elements(self.ordered_tuples)
 
     def __len__(self):
-        return len(self.ordered_tuples)
+        return len(self.sentence_tuples)
 
     def __getitem__(self, index):
         """
         Returns the tuple at the given index in the reordered list.
         """
-        return self.new_tuples[index]
+        return self.sentence_tuples[index]
 
-    def reorder_tuples(self, tuples, dataset):
+    def order_chosen_first(self, tuples, dataset):
         # Extract sentence indices from tuples
         sentence1_indices = torch.tensor([t[0] for t in tuples], dtype=torch.long)
         sentence2_indices = torch.tensor([t[1] for t in tuples], dtype=torch.long)
         
-        # Extract the labels using dataset (based on sentence indices)
+        # Extract labels using dataset (based on sentence indices)
         sentence1_labels = [dataset.targets[i] for i in sentence1_indices]
         sentence2_labels = [dataset.targets[i] for i in sentence2_indices]
         
-        # Create masks for sentences where the label is 1
+        # Create masks for sentences where label is 1 (chosen example)
         sentence1_is_label_1 = torch.tensor(sentence1_labels) == 1
         sentence2_is_label_1 = torch.tensor(sentence2_labels) == 1
 
-        # Create a mask for the cases where we need to swap sentence order
-        swap_mask = sentence2_is_label_1 & ~sentence1_is_label_1  # Sentence2 has label 1, sentence1 does not
+        # Create a mask for cases where we need to swap sentence order
+        swap_mask = sentence2_is_label_1 & ~sentence1_is_label_1  # sentence2 has label 1, sentence1 does not
         
-        # Reorder the indices based on the swap_mask
+        # Reorder indices based on the swap_mask
         sentence1_indices[swap_mask], sentence2_indices[swap_mask] = sentence2_indices[swap_mask], sentence1_indices[swap_mask]
         
-        # Rebuild the tuples with reordered indices
+        # Rebuild tuples with reordered indices
         new_tuples = list(zip(sentence1_indices.tolist(), sentence2_indices.tolist(), [t[2] for t in tuples]))
         
         return new_tuples
 
-    def extract_sentence_tuples(self, tuples, dataset):
+    def extract_sentences(self, tuples, dataset):
         # Extract sentence indices from tuples
         sentence1_indices = torch.tensor([t[0] for t in tuples], dtype=torch.long)
         sentence2_indices = torch.tensor([t[1] for t in tuples], dtype=torch.long)
         
-        # Retrieve the sentences based on the indices
+        # Retrieve sentences
         sentence1_vals = [dataset.texts[i] for i in sentence1_indices]
         sentence2_vals = [dataset.texts[i] for i in sentence2_indices]
         
-        # Return the sentences as a tuple (sentence1, sentence2, other_tuple_info)
+        # Return the sentences as a tuple (sentence1, sentence2, polarity)
         sent_tuples = list(zip(sentence1_vals, sentence2_vals, [t[2] for t in tuples]))
         
         return sent_tuples
@@ -166,10 +171,10 @@ class CurriculumContrastiveRewardDataset(Dataset):
         print('Selected examples:', torch.sum(selected_examples).item())
         return selected_examples
       
-    def get_top_elements(self, tuples):
+    def debug_top_elements(self, tuples):
       # Separate tuples based on the value of 'val'
-      top_ones = [t for t in tuples if t[2] == 1]  # Filter where val == 1
-      top_zeros = [t for t in tuples if t[2] == 0]  # Filter where val == 0
+      top_ones = [t for t in tuples if t[2] == 1]  # Filter where val == 1, indicating close match
+      top_zeros = [t for t in tuples if t[2] == 0]  # Filter where val == 0, indicating far match
 
       # Get the top 50 elements from each list (if available)
       top_ones = top_ones[:50]
@@ -185,11 +190,11 @@ class CurriculumContrastiveRewardDataset(Dataset):
         """
         non_self_mask = ~torch.eye(similarity_scores.size(0), dtype=torch.bool, device=similarity_scores.device)
 
-        # For **same labels**: high similarity corresponds to high positive confidence (close to 1)
-        confidence_same = similarity_scores * 2 - 1  # Similarity [0, 1] -> Confidence [-1, 1]
+        # For same labels: high similarity corresponds to high positive confidence (close to 1)
+        confidence_same = similarity_scores * 2 - 1  
 
-        # For **different labels**: high similarity corresponds to high negative confidence (close to -1)
-        confidence_diff = -(similarity_scores * 2 - 1)  # Similarity [0, 1] -> Confidence [1, -1]
+        # For different labels: low similarity corresponds to high negative confidence (close to -1)
+        confidence_diff = -(similarity_scores * 2 - 1)  
 
         # Initialize a confidence matrix with zeros
         confidence = torch.zeros_like(similarity_scores)
