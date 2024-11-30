@@ -92,7 +92,8 @@ alpha = 0.5
 beta = 0.25
 sup_t = 0.1
 
-def feature_compute(model, temploader):
+def compute_features_deprecated(model, temploader):
+    model.eval()
     trainFeatures = torch.rand(len(temploader.dataset), low_dim).t()
     with torch.no_grad():
         print("computing features")
@@ -102,7 +103,8 @@ def feature_compute(model, temploader):
             trainFeatures[:, batch_idx * batchSize:batch_idx * batchSize + batchSize] = features.data.t()
     return trainFeatures
     
-def compute_features_sentence(model, temploader, batch_size=1):
+def compute_features(model, temploader, batch_size=1):
+    model.eval()
     all_feats = torch.rand(len(temploader.dataset), 768).t() # [dim, n]
     with torch.no_grad():
         for batch_idx, (text, _, _) in tqdm(enumerate(temploader), total=len(temploader)):
@@ -281,7 +283,7 @@ alpha = 0.5
 beta = 0.5
 sup_t = 0.1
 
-def pair_selection_no_device(model, train_features, trainloader):
+def pair_selection(model, train_features, trainloader):
     model.eval()
     temploader = torch.utils.data.DataLoader(trainloader.dataset, batch_size=1, shuffle=False, num_workers=8)
     init_noisy_labels = torch.LongTensor(temploader.dataset.targets)
@@ -291,5 +293,5 @@ def pair_selection_no_device(model, train_features, trainloader):
     selected_pairs = select_pairs(selected_examples, similarity_graph_all, init_noisy_labels)
     return selected_examples, selected_pairs
 
-features = feature_compute(model, train_dataloader)
-examples, pairs = pair_selection_no_device(model, features, train_dataloader)
+features = compute_features_deprecated(model, train_dataloader)
+examples, pairs = pair_selection(model, features, train_dataloader)
