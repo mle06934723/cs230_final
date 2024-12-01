@@ -251,10 +251,15 @@ class CurriculumContrastiveRewardTrainDataset(Dataset):
 
             # Map similarity scores to confidence values
             confidence_matrix = self.map_similarity_to_confidence(similarity_scores, same_labels_mask, different_labels_mask)
-
             # Compute the threshold value based on the quantile of similarities in the selected mask
             selected_similarity_scores = similarity_scores[selected_mask]
-            selected_threshold = torch.quantile(selected_similarity_scores, self.beta)
+            # Split the tensor into smaller chunks
+            chunk_size = 10000  # Adjust this size based on your memory capacity
+            selected_threshold = []
+            for i in range(0, len(selected_similarity_scores), chunk_size):
+                chunk = selected_similarity_scores[i:i + chunk_size]
+                selected_threshold.append(torch.quantile(chunk, self.beta))
+            selected_threshold = torch.mean(torch.tensor(selected_threshold))  # Average the quantiles
 
             # Set low similarity pairs to 0 based on the threshold
             confidence_matrix[~selected_mask] = 0.0
