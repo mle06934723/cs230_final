@@ -34,6 +34,7 @@ class BinaryRewardModelDataset(Dataset):
         text = self.texts[idx]
         label = self.targets[idx]
         return text, label, idx 
+    
 class CurriculumContrastiveRewardTrainDataset(Dataset): 
     def __init__(self, binary_dataset: BinaryRewardModelDataset, train_features, init_dataloader):
         self.binary_dataset = binary_dataset 
