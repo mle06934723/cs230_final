@@ -57,3 +57,58 @@ def split_substring_data(model, examples):
         except RuntimeError:
             continue
     return tuples
+
+def compute_reward_loss(
+    model: Union[PreTrainedModel, nn.Module],
+    inputs: Dict[str, Union[torch.Tensor, Any]],
+    return_outputs=False,
+    num_items_in_batch=None,
+) -> Union[torch.Tensor, tuple[torch.Tensor, dict[str, torch.Tensor]]]:
+    """
+    From TRL reward_trainer 
+    """
+    rewards_chosen = model(
+        input_ids=inputs["input_ids_chosen"],
+        attention_mask=inputs["attention_mask_chosen"],
+        return_dict=True,
+    )["logits"]
+    rewards_rejected = model(
+        input_ids=inputs["input_ids_rejected"],
+        attention_mask=inputs["attention_mask_rejected"],
+        return_dict=True,
+    )["logits"]
+    loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected).mean()
+
+    if self.args.center_rewards_coefficient is not None:
+        loss += self.args.center_rewards_coefficient * torch.mean((rewards_chosen + rewards_rejected) ** 2)
+
+    if return_outputs:
+        return loss, {
+            "rewards_chosen": rewards_chosen,
+            "rewards_rejected": rewards_rejected,
+        }
+    return loss
+
+def compute_online_contrastive_loss(
+    model,
+    sentence_features: Iterable[Dict[str, torch.Tensor]], 
+    labels: torch.Tensor, size_average=False,
+    margin = 0.5,
+) -> torch.Tensor: 
+    """
+    From SentenceTransformer online contrastive loss 
+    """
+    embeddings = [model(sentence_feature)["sentence_embedding"] for sentence_feature in sentence_features]
+
+    distance_matrix = self.distance_metric(embeddings[0], embeddings[1])
+    negs = distance_matrix[labels == 0]
+    poss = distance_matrix[labels == 1]
+
+    # select hard positive and hard negative pairs
+    negative_pairs = negs[negs < (poss.max() if len(poss) > 1 else negs.mean())]
+    positive_pairs = poss[poss > (negs.min() if len(negs) > 1 else poss.mean())]
+
+    positive_loss = positive_pairs.pow(2).sum()
+    negative_loss = F.relu(margin - negative_pairs).pow(2).sum()
+    loss = positive_loss + negative_loss
+    return loss

@@ -54,25 +54,25 @@ def init_sentence_pretrained_bert_base_uncased():
 def init_sentence_unsup_cl_rlhf_bert_base_uncased():
     return SentenceTransformer("mleshen22/bert-base-uncased-cl-rlhf-5-epochs")
 
-def init_vanilla_unsup_cl_rlhf_hateBERT(low_dim=768, hidden_size=768, num_clases=2): 
+def init_vanilla_unsup_cl_rlhf_hateBERT(low_dim=768, hidden_size=768, num_classes=2): 
     model = AutoModel.from_pretrained("mleshen22/hateBERT-cl-rlhf-5-epochs", output_hidden_states=True)
     tokenizer = AutoTokenizer.from_pretrained("mleshen22/hateBERT-cl-rlhf-5-epochs")
     classifier = IntegrityClassificationModel(model, num_classes, hidden_size, low_dim)
     return model, tokenizer, classifier 
 
-def init_vanilla_hateBERT(low_dim=768, hidden_size=768, num_clases=2): 
+def init_vanilla_hateBERT(low_dim=768, hidden_size=768, num_classes=2): 
     pretrained_hatebert_automodel = AutoModel.from_pretrained("GroNLP/hateBERT", output_hidden_states=True)
     pretrained_hatebert_autotokenizer = AutoTokenizer.from_pretrained("GroNLP/hateBERT")
     pretrained_hatebert_integrityclassifier = IntegrityClassificationModel(pretrained_hatebert_automodel, num_classes, hidden_size, low_dim)
     return pretrained_hatebert_automodel, pretrained_hatebert_autotokenizer, pretrained_hatebert_integrityclassifier
 
-def init_vanilla_unsup_cl_rlhf_bert_base_uncased(low_dim=768, hidden_size=768, num_clases=2): 
+def init_vanilla_unsup_cl_rlhf_bert_base_uncased(low_dim=768, hidden_size=768, num_classes=2): 
     finetuned_bert_automodel = AutoModel.from_pretrained("mleshen22/bert-base-uncased-cl-rlhf-5-epochs", output_hidden_states=True)
     finetuned_bert_autotokenizer = AutoTokenizer.from_pretrained("mleshen22/bert-base-uncased-cl-rlhf-5-epochs")
     finetuned_bert_integrityclassifier = IntegrityClassificationModel(finetuned_bert_automodel, num_classes, hidden_size, low_dim)
     return finetuned_bert_automodel, finetuned_bert_autotokenizer, finetuned_bert_integrityclassifier
 
-def init_vanilla_bert_base_uncased(low_dim=768, hidden_size=768, num_clases=2): 
+def init_vanilla_bert_base_uncased(low_dim=768, hidden_size=768, num_classes=2): 
     pretrained_bert_automodel = AutoModel.from_pretrained("sentence-transformers/stsb-bert-base", output_hidden_states=True)
     pretrained_bert_autotokenizer = AutoTokenizer.from_pretrained("sentence-transformers/stsb-bert-base")
     pretrained_bert_integrityclassifier = IntegrityClassificationModel(pretrained_bert_automodel, num_classes, hidden_size, low_dim)
