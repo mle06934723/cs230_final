@@ -36,7 +36,7 @@ def test_qa_capabilities(model):
     for doc, score in doc_score_pairs:
         print(score, doc)
 
-def split_substring_data(examples):
+def split_substring_data(model, examples):
     """
     Uses QA to extract the most relevant substring from a response. 
     Data augmentation strategy used in lieu of SimCSE dropout: many of these responses contain benign subparts that would be noisy if 

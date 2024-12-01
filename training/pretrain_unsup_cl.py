@@ -16,7 +16,6 @@ from sentence_transformers.losses import ContrastiveLoss, MatryoshkaLoss
 from sentence_transformers.training_args import BatchSamplers
 from sentence_transformers.evaluation import BinaryClassificationEvaluator, SimilarityFunction
 from tqdm import tqdm
-from utils import split_substring_data
 from data import create_pretraining_dataset_schema
 from models import init_sentence_pretrained_hateBERT
 

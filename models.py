@@ -22,6 +22,23 @@ class IntegrityClassificationModel(nn.Module):
         pred = self.classifier(out_)
         return pred, small_feat
 
+class SentenceTransformerRewardDiscriminator(nn.Module):
+    def __init__(self, model_name, num_classes, dropout_rate=0.5):
+        super(SentenceTransformerRewardDiscriminator, self).__init__()
+        model = SentenceTransformer(model_name)
+        self.encoder = model
+        self.dropout = nn.Dropout(p=dropout_rate)
+        self.classifier = nn.Linear(self.encoder.get_sentence_embedding_dimension(), num_classes)
+
+    def forward(self, text) -> Dict[str, torch.Tensor]:
+        embeddings = self.encoder.encode(text, convert_to_tensor=True)
+        logits = self.classifier(self.dropout(embeddings))
+        return {
+            "sentence_embedding": embeddings,
+            "logits": logits
+        }
+
+
 def init_sentence_pretrained_hateBERT():
     word_embedding_model = models.Transformer('GroNLP/hateBERT')
     pooling_model = models.Pooling(word_embedding_model.get_word_embedding_dimension())

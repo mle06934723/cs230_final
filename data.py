@@ -31,11 +31,9 @@ class BinaryRewardModelDataset(Dataset):
         return len(self.texts)
 
     def __getitem__(self, idx):
-        # Get the text (either chosen or rejected) and label
         text = self.texts[idx]
         label = self.targets[idx]
-        return text, label, idx  # Return the label as a tensor
-
+        return text, label, idx 
 class CurriculumContrastiveRewardTrainDataset(Dataset): 
     def __init__(self, binary_dataset: BinaryRewardModelDataset, train_features, init_dataloader):
         self.binary_dataset = binary_dataset 
@@ -335,15 +333,15 @@ class CurriculumContrastiveRewardTrainDataset(Dataset):
         return list(dict.fromkeys(mapped_polarities))
 
 
-def create_pretraining_dataset_schema(dataset, run_name): 
+def create_pretraining_dataset_schema(dataset, run_name, model): 
   all_train_examples = [] 
   for example in tqdm(dataset['train']):
-    tups = split_substring_data(example)
+    tups = split_substring_data(example, model)
     all_train_examples.extend(tups)
   
   all_test_examples = []
   for example in tqdm(dataset['test']):
-    tups = split_substring_data(example)
+    tups = split_substring_data(example, model)
     all_test_examples.extend(tups)
   
   train_data = all_train_examples
